@@ -207,6 +207,13 @@ mem_init(void)
 	//      (ie. perm = PTE_U | PTE_P)
 	//    - pages itself -- kernel RW, user NONE
 	// Your code goes here:
+	//struct PageInfo* pages_page=pa2page(PADDR((uintptr_t)pages));
+	//page_insert(pgdir,pages_page,UPAGES,PTE_U | PTE_P);	
+	for(physaddr_t pa=PADDR(pages),offset=0;offset<sizeof(struct PageInfo)*npages;offset+=PGSIZE,pa+=PGSIZE){
+		uintptr_t va=UPAGES+offset;	
+		*pgdir_walk(kern_pgdir,(void*)va,1)=pa | PTE_U | PTE_P;
+	}
+	
 
 	//////////////////////////////////////////////////////////////////////
 	// Use the physical memory that 'bootstack' refers to as the kernel
@@ -219,6 +226,16 @@ mem_init(void)
 	//       overwrite memory.  Known as a "guard page".
 	//     Permissions: kernel RW, user NONE
 	// Your code goes here:
+	for(uintptr_t va=KSTACKTOP-KSTKSIZE,offset=0;va<KSTACKTOP;va += PGSIZE,offset += PGSIZE){
+		physaddr_t pa=PADDR(bootstack) + offset;
+		//struct PageInfo* page=pa2page(pa);
+		//page_insert(pgdir,page,va,PTE_P);
+		*pgdir_walk(kern_pgdir,(void*)va,1)=pa | PTE_P | PTE_W;
+	}
+
+	//for(uintptr_t va=KSTACKTOP-PTSIZE,offset=0;va < KSTACKTOP-KSTKSIZE;va += PGSIZE,offset += PGSIZE){
+		
+	//}	
 
 	//////////////////////////////////////////////////////////////////////
 	// Map all of physical memory at KERNBASE.
@@ -228,6 +245,11 @@ mem_init(void)
 	// we just set up the mapping anyway.
 	// Permissions: kernel RW, user NONE
 	// Your code goes here:
+	for(physaddr_t pa=0;pa<0xFFFFFFFF-KERNBASE;pa += PGSIZE){
+		uintptr_t va=pa+KERNBASE;
+		//page_insert(pgdir,);
+		*pgdir_walk(kern_pgdir,(void*)va,1)=pa | PTE_P | PTE_W;
+	}
 
 	// Check that the initial page directory has been set up correctly.
 	check_kern_pgdir();
@@ -436,7 +458,7 @@ pgdir_walk(pde_t *pgdir, const void *va, int create)
 		pp->pp_ref++;
 
 		physaddr_t pt_entry_pa=page2pa(pp);
-		pgdir[PDX(va)]=(pde_t)((pt_entry_pa & ~0xFFF) | PTE_P | PTE_U);
+		pgdir[PDX(va)]=(pde_t)((pt_entry_pa & ~0xFFF) | PTE_P | PTE_U | PTE_W);
 		
 		return (pte_t*)(page2kva(pp)+sizeof(pte_t)*PTX(va));	
 	}
