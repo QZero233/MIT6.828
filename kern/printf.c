@@ -9,6 +9,8 @@
 static void
 putch(int ch, int *cnt)
 {
+	//int color_mask=0b01100011;
+	//ch |= (color_mask << 8);
 	cputchar(ch);
 	*cnt++;
 }
