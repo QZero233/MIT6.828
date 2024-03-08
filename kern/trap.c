@@ -26,6 +26,7 @@ struct Pseudodesc idt_pd = {
 };
 
 
+extern char divide_zero_handler[];
 static const char *trapname(int trapno)
 {
 	static const char * const excnames[] = {
@@ -58,13 +59,15 @@ static const char *trapname(int trapno)
 	return "(unknown trap)";
 }
 
-
 void
 trap_init(void)
 {
 	extern struct Segdesc gdt[];
 
+	cprintf("Divide %x\n",divide_zero_handler);
+
 	// LAB 3: Your code here.
+	SETGATE(idt[T_DIVIDE],true,GD_KT,divide_zero_handler,3);
 
 	// Per-CPU setup 
 	trap_init_percpu();

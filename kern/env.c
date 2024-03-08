@@ -354,6 +354,10 @@ load_icode(struct Env *e, uint8_t *binary)
 	struct Elf* elf_header=(struct Elf*)binary;
 	if(elf_header->e_magic != ELF_MAGIC)
 		panic("Not a valid elf header on %x",binary);
+
+	//Set eip
+	e->env_tf.tf_eip=elf_header->e_entry;
+
 	struct Proghdr* ph=(struct Proghdr*)(binary + elf_header->e_phoff);
 	struct Proghdr* eph=ph+elf_header->e_phnum;
 	for(;ph<eph;ph++){
@@ -405,8 +409,6 @@ load_icode(struct Env *e, uint8_t *binary)
 			// cprintf("Copy from %x to %x\n",va+i,page_start_va+in_page_offset);
 			*(uint8_t*)(page_start_va+in_page_offset)=*(uint8_t*)((uint32_t)binary+ph->p_offset+i);
 		}
-
-		cprintf("Copy prog offset %x, va %x\n",ph->p_offset,va);
 	}
 
 	// Now map one page for the program's initial stack
@@ -565,8 +567,6 @@ env_run(struct Env *e)
 	e->env_status=ENV_RUNNING;
 	e->env_runs++;
 	lcr3((uint32_t)PADDR(e->env_pgdir));
-
-	cprintf("Ready to pop\n");
 
 	env_pop_tf(&e->env_tf);
 }
