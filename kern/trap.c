@@ -26,7 +26,6 @@ struct Pseudodesc idt_pd = {
 };
 
 
-extern char divide_zero_handler[];
 static const char *trapname(int trapno)
 {
 	static const char * const excnames[] = {
@@ -59,15 +58,50 @@ static const char *trapname(int trapno)
 	return "(unknown trap)";
 }
 
+
+extern char trap_divide_zero_handler[];
+extern char trap_debug_handler[];
+extern char trap_nmi_handler[];
+extern char trap_brkpt_handler[];
+extern char trap_oflow_handler[];
+extern char trap_bound_handler[];
+extern char trap_illop_handler[];
+extern char trap_device_handler[];
+extern char trap_dblflt_handler[];
+extern char trap_tss_handler[];
+extern char trap_tsegnp_handler[];
+extern char trap_stack_handler[];
+extern char trap_gpflt_handler[];
+extern char trap_pgflt_handler[];
+extern char trap_fperr_handler[];
+extern char trap_align_handler[];
+extern char trap_mchk_handler[];
+extern char trap_smiderr_handler[];
+
 void
 trap_init(void)
 {
 	extern struct Segdesc gdt[];
 
-	cprintf("Divide %x\n",divide_zero_handler);
-
 	// LAB 3: Your code here.
-	SETGATE(idt[T_DIVIDE],true,GD_KT,divide_zero_handler,3);
+	SETGATE(idt[T_DIVIDE],true,GD_KT,trap_divide_zero_handler,0);
+	SETGATE(idt[T_DEBUG],true,GD_KT,trap_debug_handler,0);
+	SETGATE(idt[T_NMI],true,GD_KT,trap_nmi_handler,0);
+	SETGATE(idt[T_BRKPT],true,GD_KT,trap_brkpt_handler,0);
+	SETGATE(idt[T_OFLOW],true,GD_KT,trap_oflow_handler,0);
+	SETGATE(idt[T_BOUND],true,GD_KT,trap_bound_handler,0);
+	SETGATE(idt[T_ILLOP],true,GD_KT,trap_illop_handler,0);
+	SETGATE(idt[T_DEVICE],true,GD_KT,trap_device_handler,0);
+	SETGATE(idt[T_DBLFLT],true,GD_KT,trap_dblflt_handler,0);
+	SETGATE(idt[T_TSS],true,GD_KT,trap_tss_handler,0);
+	SETGATE(idt[T_SEGNP],true,GD_KT,trap_tsegnp_handler,0);
+	SETGATE(idt[T_STACK],true,GD_KT,trap_stack_handler,0);
+	SETGATE(idt[T_GPFLT],true,GD_KT,trap_gpflt_handler,0);
+	SETGATE(idt[T_PGFLT],true,GD_KT,trap_pgflt_handler,0);
+	SETGATE(idt[T_FPERR],true,GD_KT,trap_fperr_handler,0);
+	SETGATE(idt[T_ALIGN],true,GD_KT,trap_align_handler,0);
+	SETGATE(idt[T_MCHK],true,GD_KT,trap_mchk_handler,0);
+	SETGATE(idt[T_SIMDERR],true,GD_KT,trap_smiderr_handler,0);
 
 	// Per-CPU setup 
 	trap_init_percpu();
