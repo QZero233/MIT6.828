@@ -66,12 +66,53 @@ static const char *trapname(int trapno)
 }
 
 
+extern char trap_divide_zero_handler[];
+extern char trap_debug_handler[];
+extern char trap_nmi_handler[];
+extern char trap_brkpt_handler[];
+extern char trap_oflow_handler[];
+extern char trap_bound_handler[];
+extern char trap_illop_handler[];
+extern char trap_device_handler[];
+extern char trap_dblflt_handler[];
+extern char trap_tss_handler[];
+extern char trap_tsegnp_handler[];
+extern char trap_stack_handler[];
+extern char trap_gpflt_handler[];
+extern char trap_pgflt_handler[];
+extern char trap_fperr_handler[];
+extern char trap_align_handler[];
+extern char trap_mchk_handler[];
+extern char trap_smiderr_handler[];
+
+extern char trap_syscall_handler[];
+
 void
 trap_init(void)
 {
 	extern struct Segdesc gdt[];
 
 	// LAB 3: Your code here.
+	SETGATE(idt[T_DIVIDE],true,GD_KT,trap_divide_zero_handler,0);
+	SETGATE(idt[T_DEBUG],true,GD_KT,trap_debug_handler,0);
+	SETGATE(idt[T_NMI],true,GD_KT,trap_nmi_handler,0);
+	SETGATE(idt[T_BRKPT],true,GD_KT,trap_brkpt_handler,3);
+	SETGATE(idt[T_OFLOW],true,GD_KT,trap_oflow_handler,0);
+	SETGATE(idt[T_BOUND],true,GD_KT,trap_bound_handler,0);
+	SETGATE(idt[T_ILLOP],true,GD_KT,trap_illop_handler,0);
+	SETGATE(idt[T_DEVICE],true,GD_KT,trap_device_handler,0);
+	SETGATE(idt[T_DBLFLT],true,GD_KT,trap_dblflt_handler,0);
+	SETGATE(idt[T_TSS],true,GD_KT,trap_tss_handler,0);
+	SETGATE(idt[T_SEGNP],true,GD_KT,trap_tsegnp_handler,0);
+	SETGATE(idt[T_STACK],true,GD_KT,trap_stack_handler,0);
+	SETGATE(idt[T_GPFLT],true,GD_KT,trap_gpflt_handler,0);
+	SETGATE(idt[T_PGFLT],true,GD_KT,trap_pgflt_handler,0);
+	SETGATE(idt[T_FPERR],true,GD_KT,trap_fperr_handler,0);
+	SETGATE(idt[T_ALIGN],true,GD_KT,trap_align_handler,0);
+	SETGATE(idt[T_MCHK],true,GD_KT,trap_mchk_handler,0);
+	SETGATE(idt[T_SIMDERR],true,GD_KT,trap_smiderr_handler,0);
+
+	SETGATE(idt[T_SYSCALL],true,GD_KT,trap_syscall_handler,3);
 
 	// Per-CPU setup 
 	trap_init_percpu();
@@ -189,6 +230,50 @@ trap_dispatch(struct Trapframe *tf)
 	// Handle clock interrupts. Don't forget to acknowledge the
 	// interrupt using lapic_eoi() before calling the scheduler!
 	// LAB 4: Your code here.
+	if(tf->tf_trapno == T_PGFLT){
+		page_fault_handler(tf);
+	}else if(tf->tf_trapno == T_BRKPT){
+		monitor(tf);
+	}else if(tf->tf_trapno == T_SYSCALL){
+		uint32_t syscall_num,p1,p2,p3,p4,p5;
+
+		// asm volatile (
+		// 	"movl %%eax, %0\n\t"
+		// 	"movl %%edx, %1\n\t"
+		// 	"movl %%ecx, %2\n\t"
+		// 	"movl %%ebx, %3\n\t"
+		// 	"movl %%edi, %4\n\t"
+		// 	"movl %%esi, %5\n\t"
+		// 	:"=r"(syscall_num),
+		// 	"=r"(p1),
+		// 	"=r"(p2),
+		// 	"=r"(p3),
+		// 	"=r"(p4),
+		// 	"=r"(p5)
+		// );
+
+		syscall_num=tf->tf_regs.reg_eax;
+		p1=tf->tf_regs.reg_edx;
+		p2=tf->tf_regs.reg_ecx;
+		p3=tf->tf_regs.reg_ebx;
+		p4=tf->tf_regs.reg_edi;
+		p5=tf->tf_regs.reg_esi;
+
+		// cprintf("1: %d 2:%d 3:%d 4:%d\n",syscall_num,p1,p2,p3);
+
+		int32_t ret=syscall(syscall_num,p1,p2,p3,p4,p5);
+
+		// asm volatile (
+		// 	"movl %0, %%eax"
+		// 	:
+		// 	:"r"(ret)
+		// 	:"%eax"
+		// );
+
+		tf->tf_regs.reg_eax=ret;
+		return;
+	}
+
 
 	// Unexpected trap: The user process or the kernel has a bug.
 	print_trapframe(tf);
@@ -271,6 +356,10 @@ page_fault_handler(struct Trapframe *tf)
 	// Handle kernel-mode page faults.
 
 	// LAB 3: Your code here.
+	if((tf->tf_cs & 3) == 0){
+		//Kernel page fault
+		panic("Kernel page fault when addressing %x\n",fault_va);
+	}
 
 	// We've already handled kernel-mode exceptions, so if we get here,
 	// the page fault happened in user mode.
