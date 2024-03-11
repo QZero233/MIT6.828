@@ -667,6 +667,35 @@ int
 user_mem_check(struct Env *env, const void *va, size_t len, int perm)
 {
 	// LAB 3: Your code here.
+	if((uintptr_t)va+len >= ULIM){
+		if((uintptr_t)va >= ULIM){
+			user_mem_check_addr=(uintptr_t)va;
+		}else{
+			user_mem_check_addr=ULIM;
+		}
+		return -E_FAULT;
+	}
+
+	uintptr_t start_va=ROUNDDOWN((uintptr_t)va,PGSIZE);
+	uintptr_t end_va=ROUNDUP((uintptr_t)va+len,PGSIZE);
+
+	// cprintf("Mem check start va %x and end va %x\n",start_va,end_va);
+
+	perm |= PTE_P;
+
+	for(uintptr_t current_va=start_va;current_va<end_va;current_va+=PGSIZE){
+		pte_t* pte=pgdir_walk(env->env_pgdir,(void*)current_va,0);
+		// cprintf("Pte for va %x is %x and check val is %d\n",current_va,*pte,(*pte & perm) != perm);
+		if(pte == NULL || (*pte & perm) != perm){
+			user_mem_check_addr=current_va;
+
+			if(current_va == start_va){
+				user_mem_check_addr=(uintptr_t)va;
+			}
+
+			return -E_FAULT;
+		}
+	}
 
 	return 0;
 }

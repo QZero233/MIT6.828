@@ -127,17 +127,26 @@ debuginfo_eip(uintptr_t addr, struct Eipdebuginfo *info)
 
 	// Find the relevant set of stabs
 	if (addr >= ULIM) {
+		// cprintf("Above ULIM\n");
 		stabs = __STAB_BEGIN__;
 		stab_end = __STAB_END__;
 		stabstr = __STABSTR_BEGIN__;
 		stabstr_end = __STABSTR_END__;
 	} else {
+		// cprintf("Below ULIM\n");
+
 		// The user-application linker script, user/user.ld,
 		// puts information about the application's stabs (equivalent
 		// to __STAB_BEGIN__, __STAB_END__, __STABSTR_BEGIN__, and
 		// __STABSTR_END__) in a structure located at virtual address
 		// USTABDATA.
 		const struct UserStabData *usd = (const struct UserStabData *) USTABDATA;
+		if(curenv != NULL){
+			if(user_mem_check(curenv,usd,sizeof(struct UserStabData),PTE_U) < 0){
+				// cprintf("Check usd failed\n");
+				return -1;
+			}
+		}
 
 		// Make sure this memory is valid.
 		// Return -1 if it is not.  Hint: Call user_mem_check.
@@ -147,9 +156,21 @@ debuginfo_eip(uintptr_t addr, struct Eipdebuginfo *info)
 		stab_end = usd->stab_end;
 		stabstr = usd->stabstr;
 		stabstr_end = usd->stabstr_end;
-
+		
 		// Make sure the STABS and string table memory is valid.
 		// LAB 3: Your code here.
+
+		if(curenv != NULL){
+			if(user_mem_check(curenv,stabs,(uintptr_t)stab_end-(uintptr_t)stabs,PTE_U)<0){
+				// cprintf("Check stabs failed\n");
+				return -1;
+			}
+
+			if(user_mem_check(curenv,stabstr,(uintptr_t)stabstr_end-(uintptr_t)stabstr,PTE_U)<0){
+				// cprintf("Check stabs str failed\n");
+				return -1;
+			}
+		}
 	}
 
 	// String table validity checks
