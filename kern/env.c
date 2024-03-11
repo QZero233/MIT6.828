@@ -388,7 +388,7 @@ load_icode(struct Env *e, uint8_t *binary)
 		uintptr_t page_start_va=0;
 		int current_page_idx=0;
 		uintptr_t in_page_offset=va%PGSIZE;
-		for(uintptr_t i=0;i<ph->p_filesz;i++,in_page_offset++){
+		for(uintptr_t i=0;i<ph->p_memsz;i++,in_page_offset++){
 			uintptr_t current_va=va+i;
 			if(current_va / PGSIZE != current_page_idx){
 				current_page_idx=current_va/PGSIZE;
@@ -407,7 +407,12 @@ load_icode(struct Env *e, uint8_t *binary)
 			}
 
 			// cprintf("Copy from %x to %x\n",va+i,page_start_va+in_page_offset);
-			*(uint8_t*)(page_start_va+in_page_offset)=*(uint8_t*)((uint32_t)binary+ph->p_offset+i);
+			if(i<ph->p_filesz){
+				*(uint8_t*)(page_start_va+in_page_offset)=*(uint8_t*)((uint32_t)binary+ph->p_offset+i);
+			}else{
+				*(uint8_t*)(page_start_va+in_page_offset)=0;
+			}
+			
 		}
 	}
 

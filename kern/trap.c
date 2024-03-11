@@ -78,6 +78,8 @@ extern char trap_align_handler[];
 extern char trap_mchk_handler[];
 extern char trap_smiderr_handler[];
 
+extern char trap_syscall_handler[];
+
 void
 trap_init(void)
 {
@@ -87,7 +89,7 @@ trap_init(void)
 	SETGATE(idt[T_DIVIDE],true,GD_KT,trap_divide_zero_handler,0);
 	SETGATE(idt[T_DEBUG],true,GD_KT,trap_debug_handler,0);
 	SETGATE(idt[T_NMI],true,GD_KT,trap_nmi_handler,0);
-	SETGATE(idt[T_BRKPT],true,GD_KT,trap_brkpt_handler,0);
+	SETGATE(idt[T_BRKPT],true,GD_KT,trap_brkpt_handler,3);
 	SETGATE(idt[T_OFLOW],true,GD_KT,trap_oflow_handler,0);
 	SETGATE(idt[T_BOUND],true,GD_KT,trap_bound_handler,0);
 	SETGATE(idt[T_ILLOP],true,GD_KT,trap_illop_handler,0);
@@ -102,6 +104,8 @@ trap_init(void)
 	SETGATE(idt[T_ALIGN],true,GD_KT,trap_align_handler,0);
 	SETGATE(idt[T_MCHK],true,GD_KT,trap_mchk_handler,0);
 	SETGATE(idt[T_SIMDERR],true,GD_KT,trap_smiderr_handler,0);
+
+	SETGATE(idt[T_SYSCALL],true,GD_KT,trap_syscall_handler,3);
 
 	// Per-CPU setup 
 	trap_init_percpu();
@@ -181,6 +185,90 @@ trap_dispatch(struct Trapframe *tf)
 {
 	// Handle processor exceptions.
 	// LAB 3: Your code here.
+
+	// switch(tf->tf_trapno){
+	// 	case T_PGFLT:
+	// 	page_fault_handler(tf);
+	// 	break;
+	// 	case T_BRKPT:
+	// 	monitor(tf);
+	// 	break;
+	// 	case T_SYSCALL:
+
+	// 	uint32_t syscall_num,p1,p2,p3,p4,p5;
+
+	// 	asm volatile (
+	// 		"movl %%eax, %0\n\t"
+	// 		"movl %%edx, %1\n\t"
+	// 		"movl %%ecx, %2\n\t"
+	// 		"movl %%ebx, %3\n\t"
+	// 		"movl %%edi, %4\n\t"
+	// 		"movl %%esi, %5\n\t"
+	// 		:"=r"(syscall_num),
+	// 		"=r"(p1),
+	// 		"=r"(p2),
+	// 		"=r"(p3),
+	// 		"=r"(p4),
+	// 		"=r"(p5)
+	// 	);
+
+	// 	cprintf("1: %d 2:%d 3:%d 4:%d\n",syscall_num,p1,p2,p3);
+
+	// 	int32_t ret=syscall(syscall_num,p1,p2,p3,p4,p5);
+
+	// 	asm volatile (
+	// 		"movl %0, %%eax"
+	// 		:
+	// 		:"r"(ret)
+	// 	);
+
+	// 	break;
+	// }
+	// cprintf("Handle trap %d \n",tf->tf_trapno);
+	if(tf->tf_trapno == T_PGFLT){
+		page_fault_handler(tf);
+	}else if(tf->tf_trapno == T_BRKPT){
+		monitor(tf);
+	}else if(tf->tf_trapno == T_SYSCALL){
+		uint32_t syscall_num,p1,p2,p3,p4,p5;
+
+		// asm volatile (
+		// 	"movl %%eax, %0\n\t"
+		// 	"movl %%edx, %1\n\t"
+		// 	"movl %%ecx, %2\n\t"
+		// 	"movl %%ebx, %3\n\t"
+		// 	"movl %%edi, %4\n\t"
+		// 	"movl %%esi, %5\n\t"
+		// 	:"=r"(syscall_num),
+		// 	"=r"(p1),
+		// 	"=r"(p2),
+		// 	"=r"(p3),
+		// 	"=r"(p4),
+		// 	"=r"(p5)
+		// );
+
+		syscall_num=tf->tf_regs.reg_eax;
+		p1=tf->tf_regs.reg_edx;
+		p2=tf->tf_regs.reg_ecx;
+		p3=tf->tf_regs.reg_ebx;
+		p4=tf->tf_regs.reg_edi;
+		p5=tf->tf_regs.reg_esi;
+
+		// cprintf("1: %d 2:%d 3:%d 4:%d\n",syscall_num,p1,p2,p3);
+
+		int32_t ret=syscall(syscall_num,p1,p2,p3,p4,p5);
+
+		// asm volatile (
+		// 	"movl %0, %%eax"
+		// 	:
+		// 	:"r"(ret)
+		// 	:"%eax"
+		// );
+
+		tf->tf_regs.reg_eax=ret;
+		return;
+	}
+
 
 	// Unexpected trap: The user process or the kernel has a bug.
 	print_trapframe(tf);
