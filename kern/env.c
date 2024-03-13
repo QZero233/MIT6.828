@@ -550,6 +550,8 @@ env_pop_tf(struct Trapframe *tf)
 	// Record the CPU we are running on for user-space debugging
 	curenv->env_cpunum = cpunum();
 
+	unlock_kernel();
+
 	asm volatile(
 		"\tmovl %0,%%esp\n"
 		"\tpopal\n"
@@ -588,10 +590,11 @@ env_run(struct Env *e)
 	//	e->env_tf to sensible values.
 
 	// LAB 3: Your code here.
-
+	
 	if(curenv != NULL){
+		//No need to save registers, it is saved when interrupt
 		curenv->env_status=ENV_RUNNABLE;
-		//TODO save registers?
+		curenv->env_runs--;
 	}
 
 	curenv=e;

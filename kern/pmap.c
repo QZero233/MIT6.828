@@ -322,6 +322,14 @@ mem_init_mp(void)
 	//
 	// LAB 4: Your code here:
 
+	for(int i=0;i<NCPU;i++){
+		uintptr_t end=KSTACKTOP - i * (KSTKSIZE+KSTKGAP);
+		uintptr_t start=end-KSTKSIZE;
+
+		for(uintptr_t va=start;va<end;va+=PGSIZE){
+			*pgdir_walk(kern_pgdir,(void*)va,1)=(PADDR(percpu_kstacks[i])+(va-start)) | PTE_P | PTE_W;
+		}
+	}
 }
 
 // --------------------------------------------------------------
@@ -373,6 +381,11 @@ page_init(void)
 
 		uintptr_t pageStart=PGSIZE*i;
 		uintptr_t pageEnd=pageStart+PGSIZE;
+
+		//Lab4 Rule: Reserve MPENTRY_PADDR
+		if(pageStart == MPENTRY_PADDR){
+			continue;
+		}
 
 		//Rule 3: Reserve IO Hole
 		if(IOPHYSMEM >= pageStart && IOPHYSMEM < pageEnd){
@@ -709,7 +722,22 @@ mmio_map_region(physaddr_t pa, size_t size)
 	// Hint: The staff solution uses boot_map_region.
 	//
 	// Your code here:
-	panic("mmio_map_region not implemented");
+
+	uintptr_t end=ROUNDUP(base+size,PGSIZE);
+	if(end>MMIOLIM){
+		panic("No enough mmio space");
+	}
+
+	// boot_map_region(kern_pgdir,base,end-base,pa,PTE_PCD|PTE_PWT|PTE_W);
+	for(uintptr_t va=base;va<end;va+=PGSIZE){
+		*pgdir_walk(kern_pgdir,(void*)va,1)=(pa+(va-base)) | PTE_PCD|PTE_PWT|PTE_W | PTE_P;
+		// boot_map_region(kern_pgdir,va,PGSIZE,pa+(va-base),PTE_PCD|PTE_PWT|PTE_W);
+	}
+
+	uintptr_t result=base;
+	base=end;
+
+	return (void*)result;
 }
 
 static uintptr_t user_mem_check_addr;
