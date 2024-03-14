@@ -37,7 +37,7 @@ sched_yield(void)
 	int i=cur_idx+1;
 	i %= NENV;
 
-	while(i != cur_idx){
+	do{
 		if(envs[i].env_status == ENV_RUNNABLE){
 			idle=&envs[i];
 			break;
@@ -45,7 +45,7 @@ sched_yield(void)
 
 		i++;
 		i %= NENV;
-	}
+	}while(i != (cur_idx+1)%NENV);
 
 	if(idle == NULL && curenv != NULL && curenv->env_status == ENV_RUNNING){
 		idle=curenv;
