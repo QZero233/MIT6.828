@@ -7,6 +7,12 @@
 // It is one of the bits explicitly allocated to user processes (PTE_AVAIL).
 #define PTE_COW		0x800
 
+//Return the page ditrctory entry for a certain va
+#define PDE_USER(va) (*(pde_t*)(UVPT+(PDX(UVPT)<<12)+PDX(va)*4))
+
+//Return the page table entry for a certain va
+#define PTE_USER(va) (*(pte_t*)(UVPT+(PDX(va)<<12)+PTX(va)*4))
+
 //
 // Custom page fault handler - if faulting page is copy-on-write,
 // map in our own private writable copy.
@@ -25,6 +31,30 @@ pgfault(struct UTrapframe *utf)
 	//   (see <inc/memlayout.h>).
 
 	// LAB 4: Your code here.
+	
+	// if(va==0xeebfe000)
+	// 	cprintf("PDE %x, PTE %x, PDE ADDR %x, PTE ADDR %x\n",PDE_USER(va),PTE_USER(va),
+	// 	&PDE_USER(va),&PTE_USER(va));
+
+	if((err & FEC_WR) == 0){
+		panic("Page fault caused not by write, addr %x\n",addr);
+	}
+	
+	//Access page table to see the permission
+	uintptr_t va=(uintptr_t)addr;
+
+	//Round addr and va to page aligned
+	va=ROUNDDOWN(va,PGSIZE);
+	addr=(void*)va;
+
+	if((PDE_USER(va)&PTE_P) == 0 || (PTE_USER(va)&PTE_P) == 0){
+		panic("No page table at %x\n",va);
+	}
+
+	pte_t pte=PTE_USER(va);
+	if((pte & PTE_COW) == 0){
+		panic("Try to write a non-COW page, addr %x\n",va);
+	}
 
 	// Allocate a new page, map it at a temporary location (PFTEMP),
 	// copy the data from the old page to the new page, then move the new
@@ -34,8 +64,28 @@ pgfault(struct UTrapframe *utf)
 
 	// LAB 4: Your code here.
 
-	panic("pgfault not implemented");
+	//Alloc a new page at PFTEMP
+	if((r=sys_page_alloc(sys_getenvid(),(void*)PFTEMP,
+	PTE_P|PTE_U|PTE_W)) < 0){
+		panic("Failed to alloc temp page, %e\n",r);
+	}
+
+	//Copy content
+	memcpy((void*)PFTEMP,addr,PGSIZE);
+
+	//Map temp page to addr
+	if((r=sys_page_map(sys_getenvid(),(void*)PFTEMP,
+	sys_getenvid(),addr,PTE_P|PTE_U|PTE_W))<0){
+		panic("Failed to map temp page to addr, %e\n",r);
+	}
+
+	//Unmap temp page
+	if((r=sys_page_unmap(sys_getenvid(),(void*)PFTEMP))<0){
+		panic("Failed to unmap temp page, %e\n",r);
+	}
 }
+
+
 
 //
 // Map our virtual page pn (address pn*PGSIZE) into the target envid
@@ -53,10 +103,58 @@ duppage(envid_t envid, unsigned pn)
 {
 	int r;
 
+	bool flag=false;
 	// LAB 4: Your code here.
-	panic("duppage not implemented");
+	for(unsigned int i=0;i<pn;i++){
+		uintptr_t va=i*PGSIZE;
+
+		//Skip exception stack
+		if(va == UXSTACKTOP - PGSIZE){
+			continue;
+		}
+
+		bool write=true,cow=true;
+		//Access page table to see the permission
+
+		if((PDE_USER(va)&PTE_P) == 0){
+			continue;
+		}
+
+		if((PTE_USER(va)&PTE_P) == 0){
+			continue;
+		}
+
+		pde_t pde=PDE_USER(va);
+		pte_t pte=PTE_USER(va);
+
+		write=(pte & PTE_W) | (pde & PTE_W);
+		cow=(pte & PTE_COW) | (pde & PTE_COW);
+
+		int child_perm=PTE_U|PTE_P;
+		if(write || cow){
+			child_perm |= PTE_COW;
+		}
+
+		if((r=sys_page_map(thisenv->env_id,(void*)va,
+		envid,(void*)va,child_perm)) <0 ){
+			return r;
+		}
+
+		//Remap src page cow
+		if(write || cow){
+			//FIXME: when parent page entry has more perm bits, it will cause them lost....
+			if((r=sys_page_map(envid,(void*)va,
+			thisenv->env_id,(void*)va,child_perm))<0){
+				return r;
+			}
+		}
+	}
+
 	return 0;
 }
+
+// Assembly language pgfault entrypoint defined in lib/pfentry.S.
+extern void _pgfault_upcall(void);
 
 //
 // User-level fork with copy-on-write.
@@ -78,7 +176,42 @@ envid_t
 fork(void)
 {
 	// LAB 4: Your code here.
-	panic("fork not implemented");
+	int r;
+
+	set_pgfault_handler(pgfault);
+
+	envid_t envid=sys_exofork();
+	if(envid>0){
+		//Parent
+
+		//Map all pages below UTOP
+		if((r=duppage(envid,UTOP/PGSIZE))<0){
+			return r;
+		}
+
+		//Allocate exception stack for child
+		if((r=sys_page_alloc(envid,(void*)(UXSTACKTOP-PGSIZE),PTE_U|PTE_W|PTE_P)) < 0){
+			return r;
+		}
+
+		//Setup page fault entry point for child
+		if((r=sys_env_set_pgfault_upcall(envid,_pgfault_upcall)) < 0 ){
+			return r;
+		} 
+
+		//Mark child runnable
+		sys_env_set_status(envid,ENV_RUNNABLE);
+	}else if(envid==0){
+		//Child
+
+		//Reset current environment
+		envid_t child_envid=sys_getenvid();
+		thisenv =((struct Env*)envs)+ENVX(child_envid);
+	}else{
+		return envid;
+	}
+
+	return envid;
 }
 
 // Challenge!

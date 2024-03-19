@@ -236,7 +236,6 @@ sys_page_map(envid_t srcenvid, void *srcva,
 	//   check the current permissions on the page.
 
 	// LAB 4: Your code here.
-
 	uintptr_t v=(uintptr_t)srcva;
 	if(v>=UTOP || v % PGSIZE != 0){
 		return -E_INVAL;
