@@ -125,6 +125,7 @@ env_init(void)
 		current->env_link=&envs[i];
 		current=&envs[i];
 	}
+	current->env_link=NULL;
 
 	// Per-CPU part of the initialization
 	env_init_percpu();
@@ -264,6 +265,7 @@ env_alloc(struct Env **newenv_store, envid_t parent_id)
 
 	// Enable interrupts while in user mode.
 	// LAB 4: Your code here.
+	e->env_tf.tf_eflags |= FL_IF;
 
 	// Clear the page fault handler until user installs one.
 	e->env_pgfault_upcall = 0;
@@ -591,7 +593,7 @@ env_run(struct Env *e)
 
 	// LAB 3: Your code here.
 	
-	if(curenv != NULL){
+	if(curenv != NULL && curenv->env_status == ENV_RUNNING){
 		//No need to save registers, it is saved when interrupt
 		curenv->env_status=ENV_RUNNABLE;
 		curenv->env_runs--;
@@ -600,6 +602,10 @@ env_run(struct Env *e)
 	curenv=e;
 	e->env_status=ENV_RUNNING;
 	e->env_runs++;
+
+	//Unmask interrupt
+	// e->env_tf.tf_eflags |= FL_IF;
+
 	lcr3((uint32_t)PADDR(e->env_pgdir));
 
 	env_pop_tf(&e->env_tf);

@@ -117,7 +117,7 @@ sys_env_set_status(envid_t envid, int status)
 	// envid's status.
 
 	// LAB 4: Your code here.
-	
+
 	struct Env* env;
 	int ret=envid2env(envid,&env,true);
 	if(ret < 0){
@@ -352,7 +352,81 @@ static int
 sys_ipc_try_send(envid_t envid, uint32_t value, void *srcva, unsigned perm)
 {
 	// LAB 4: Your code here.
-	panic("sys_ipc_try_send not implemented");
+
+	//Find the target env
+	struct Env* target_env;
+	int r;
+	if((r=envid2env(envid,&target_env,false)) < 0){
+		return r;
+	}
+
+	if(target_env == NULL){
+		return -E_BAD_ENV;
+	}
+
+	//Check if target env want to receive
+	if(!target_env->env_ipc_recving){
+		return -E_IPC_NOT_RECV;
+	}
+
+	//Check requirements for page transfer
+	if((uintptr_t)srcva < UTOP && (uintptr_t)target_env->env_ipc_dstva < UTOP){
+
+		//Check page align
+		if((uintptr_t)srcva % PGSIZE != 0){
+			//Not page-aligned
+			return -E_INVAL;
+		}
+
+		//Check perm
+		if((perm & (PTE_U | PTE_P))!= (PTE_U | PTE_P) || (perm & ~(PTE_U | PTE_P | PTE_AVAIL | PTE_W)) != 0){
+			return -E_INVAL;
+		}
+
+		//Check srcva page
+		pte_t* pte=pgdir_walk(curenv->env_pgdir,srcva,0);
+		if(pte == NULL){
+			//Srcva page not exists
+			return -E_INVAL;
+		}
+
+		//Check if read-only in srcva mapped to a writtable page in dstva
+		if((*pte & PTE_W) == 0 && (perm & PTE_W)){
+			return -E_INVAL;
+		}
+	}
+
+	//Start sending
+	//Send value
+	target_env->env_ipc_recving=false;
+	target_env->env_ipc_from=curenv->env_id;
+	target_env->env_ipc_value=value;
+
+	//Transfer page
+	if((uintptr_t)srcva < UTOP && (uintptr_t)target_env->env_ipc_dstva < UTOP){
+		target_env->env_ipc_perm=perm;
+
+		//Start map page
+		struct PageInfo* pp;
+		if((pp=page_lookup(curenv->env_pgdir,srcva,NULL)) == NULL){
+			//No page found in srcva
+			return -E_INVAL;
+		}
+
+		if((r=page_insert(target_env->env_pgdir,pp,target_env->env_ipc_dstva,perm))<0){
+			return r;
+		}
+	}else{
+		//No page transfer happend, just set perm 0
+		target_env->env_ipc_perm=0;
+	}
+
+	//Page mapped, now we need to set the return value and mark it runnable
+	target_env->env_tf.tf_regs.reg_eax=0;
+	target_env->env_status=ENV_RUNNABLE;
+
+	return 0;
+
 }
 
 // Block until a value is ready.  Record that you want to receive
@@ -370,7 +444,17 @@ static int
 sys_ipc_recv(void *dstva)
 {
 	// LAB 4: Your code here.
-	panic("sys_ipc_recv not implemented");
+	uintptr_t dstva_int=(uintptr_t)dstva;
+	if(dstva_int < UTOP && dstva_int%PGSIZE != 0){
+		return -E_INVAL;
+	}
+
+	curenv->env_status=ENV_NOT_RUNNABLE;
+	curenv->env_ipc_recving=true;
+	curenv->env_ipc_dstva=dstva;
+
+	sched_yield();
+
 	return 0;
 }
 
@@ -412,6 +496,10 @@ syscall(uint32_t syscallno, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, 
 		return sys_page_unmap(a1,(void*)a2);
 	case SYS_env_set_pgfault_upcall:
 		return sys_env_set_pgfault_upcall(a1,(void*)a2);
+	case SYS_ipc_try_send:
+		return sys_ipc_try_send(a1,a2,(void*)a3,a4);
+	case SYS_ipc_recv:
+		return sys_ipc_recv((void*)a1);
 	default:
 		return -E_INVAL;
 	}
