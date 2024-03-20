@@ -64,7 +64,7 @@ spin_lock(struct spinlock *lk)
 	if (holding(lk))
 		panic("CPU %d cannot acquire %s: already holding", cpunum(), lk->name);
 #endif
-
+	
 	// The xchg is atomic.
 	// It also serializes, so that reads after acquire are not
 	// reordered before it. 

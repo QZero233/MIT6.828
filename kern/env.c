@@ -119,6 +119,13 @@ env_init(void)
 {
 	// Set up envs array
 	// LAB 3: Your code here.
+	struct Env* current=envs;
+	env_free_list=envs;
+	for(int i=1;i<NENV;i++){
+		current->env_link=&envs[i];
+		current=&envs[i];
+	}
+	current->env_link=NULL;
 
 	// Per-CPU part of the initialization
 	env_init_percpu();
@@ -182,6 +189,17 @@ env_setup_vm(struct Env *e)
 	//    - The functions in kern/pmap.h are handy.
 
 	// LAB 3: Your code here.
+	p->pp_ref++;
+
+	pde_t* pde=(pde_t*)page2kva(p);
+	for(uintptr_t va=UTOP;;va+=PTSIZE){
+		pde[PDX(va)]=kern_pgdir[PDX(va)];
+
+		if(va == 0xFFC00000)
+			break;
+	}
+
+	e->env_pgdir=pde;
 
 	// UVPT maps the env's own page table read-only.
 	// Permissions: kernel R, user R
@@ -247,6 +265,7 @@ env_alloc(struct Env **newenv_store, envid_t parent_id)
 
 	// Enable interrupts while in user mode.
 	// LAB 4: Your code here.
+	e->env_tf.tf_eflags |= FL_IF;
 
 	// Clear the page fault handler until user installs one.
 	e->env_pgfault_upcall = 0;
@@ -279,6 +298,17 @@ region_alloc(struct Env *e, void *va, size_t len)
 	//   'va' and 'len' values that are not page-aligned.
 	//   You should round va down, and round (va + len) up.
 	//   (Watch out for corner-cases!)
+	uintptr_t end_va=ROUNDUP((uintptr_t)va+len,PGSIZE);
+	uintptr_t start_va=ROUNDDOWN((uintptr_t)va,PGSIZE);
+
+	for(uintptr_t va=start_va;va<end_va;va+=PGSIZE){
+		struct PageInfo* pp=page_alloc(0);
+		if(pp==NULL)
+			panic("No free pages when try to region alloc %x %d",(uintptr_t)va,len);
+		pp->pp_ref++;
+		if(page_insert(e->env_pgdir,pp,(void*)va,PTE_U|PTE_W)!=0)
+			panic("Can not insert page when region alloc");
+	}	
 }
 
 //
@@ -335,11 +365,80 @@ load_icode(struct Env *e, uint8_t *binary)
 	//  What?  (See env_run() and env_pop_tf() below.)
 
 	// LAB 3: Your code here.
+	struct Elf* elf_header=(struct Elf*)binary;
+	if(elf_header->e_magic != ELF_MAGIC)
+		panic("Not a valid elf header on %x",binary);
+
+	//Set eip
+	e->env_tf.tf_eip=elf_header->e_entry;
+
+	struct Proghdr* ph=(struct Proghdr*)(binary + elf_header->e_phoff);
+	struct Proghdr* eph=ph+elf_header->e_phnum;
+	for(;ph<eph;ph++){
+		if(ph->p_type != ELF_PROG_LOAD)
+			continue;
+		
+		uintptr_t va=(uintptr_t)ph->p_va;
+		uint32_t offset=ph->p_offset;
+
+		region_alloc(e,(void*)va,ph->p_memsz);
+
+		//If start va is not page-aligned, copy the first page
+		// if(va%PGSIZE != 0){
+		// 	pte_t* pte=pgdir_walk(e->env_pgdir,va,0);
+		// 	if(pte == NULL)
+		// 		panic("Can not get page table for program");
+
+		// 	physaddr_t page_start_pa=PTE_ADDR(*pte);
+		// 	uintptr_t page_start_va=KADDR(page_start_pa);
+
+		// 	uintptr_t start_page_offset=va%PGSIZE;
+		// 	uintptr_t current_va=page_start_va+start_page_offset;
+		// 	for(;current_va<page_start_va+PGSIZE;current_va++){
+		// 		*(uint8_t*)current_va=
+		// 	}
+		// }
+
+		uintptr_t page_start_va=0;
+		int current_page_idx=0;
+		uintptr_t in_page_offset=va%PGSIZE;
+		for(uintptr_t i=0;i<ph->p_memsz;i++,in_page_offset++){
+			uintptr_t current_va=va+i;
+			if(current_va / PGSIZE != current_page_idx){
+				current_page_idx=current_va/PGSIZE;
+				pte_t* current_pte=pgdir_walk(e->env_pgdir,(void*)current_va,0);
+
+				if(current_pte == NULL)
+					panic("Can not get page table");
+
+				page_start_va=(uintptr_t)KADDR(PTE_ADDR(*current_pte));
+
+				if(i==0){
+					in_page_offset=va%PGSIZE;
+				}else{
+					in_page_offset=0;
+				}
+			}
+
+			// cprintf("Copy from %x to %x\n",va+i,page_start_va+in_page_offset);
+			if(i<ph->p_filesz){
+				*(uint8_t*)(page_start_va+in_page_offset)=*(uint8_t*)((uint32_t)binary+ph->p_offset+i);
+			}else{
+				*(uint8_t*)(page_start_va+in_page_offset)=0;
+			}
+			
+		}
+	}
 
 	// Now map one page for the program's initial stack
 	// at virtual address USTACKTOP - PGSIZE.
 
 	// LAB 3: Your code here.
+	struct PageInfo* pp=page_alloc(0);
+	if(pp==NULL)
+		panic("No free pages for stack");
+
+	page_insert(e->env_pgdir,pp,(void*)(USTACKTOP-PGSIZE),PTE_U|PTE_W);
 }
 
 //
@@ -356,6 +455,14 @@ env_create(uint8_t *binary, enum EnvType type)
 
 	// If this is the file server (type == ENV_TYPE_FS) give it I/O privileges.
 	// LAB 5: Your code here.
+	struct Env* e=NULL;
+	if(env_alloc(&e,0) != 0){
+		panic("Alloc env failed");
+	}
+
+	e->env_type=type;
+
+	load_icode(e,binary);
 }
 
 //
@@ -448,6 +555,8 @@ env_pop_tf(struct Trapframe *tf)
 	// Record the CPU we are running on for user-space debugging
 	curenv->env_cpunum = cpunum();
 
+	unlock_kernel();
+
 	asm volatile(
 		"\tmovl %0,%%esp\n"
 		"\tpopal\n"
@@ -486,7 +595,22 @@ env_run(struct Env *e)
 	//	e->env_tf to sensible values.
 
 	// LAB 3: Your code here.
+	
+	if(curenv != NULL && curenv->env_status == ENV_RUNNING){
+		//No need to save registers, it is saved when interrupt
+		curenv->env_status=ENV_RUNNABLE;
+		curenv->env_runs--;
+	}
 
-	panic("env_run not yet implemented");
+	curenv=e;
+	e->env_status=ENV_RUNNING;
+	e->env_runs++;
+
+	//Unmask interrupt
+	// e->env_tf.tf_eflags |= FL_IF;
+
+	lcr3((uint32_t)PADDR(e->env_pgdir));
+
+	env_pop_tf(&e->env_tf);
 }
 
