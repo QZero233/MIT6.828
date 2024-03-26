@@ -85,6 +85,12 @@
  */
 
 
+//Return the page ditrctory entry for a certain va
+#define PDE_USER(va) (*(pde_t*)(UVPT+(PDX(UVPT)<<12)+PDX(va)*4))
+
+//Return the page table entry for a certain va
+#define PTE_USER(va) (*(pte_t*)(UVPT+(PDX(va)<<12)+PTX(va)*4))
+
 // All physical memory mapped at this address
 #define	KERNBASE	0xF0000000
 

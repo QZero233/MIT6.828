@@ -7,12 +7,6 @@
 // It is one of the bits explicitly allocated to user processes (PTE_AVAIL).
 #define PTE_COW		0x800
 
-//Return the page ditrctory entry for a certain va
-#define PDE_USER(va) (*(pde_t*)(UVPT+(PDX(UVPT)<<12)+PDX(va)*4))
-
-//Return the page table entry for a certain va
-#define PTE_USER(va) (*(pte_t*)(UVPT+(PDX(va)<<12)+PTX(va)*4))
-
 //
 // Custom page fault handler - if faulting page is copy-on-write,
 // map in our own private writable copy.
@@ -48,7 +42,7 @@ pgfault(struct UTrapframe *utf)
 	addr=(void*)va;
 
 	if((PDE_USER(va)&PTE_P) == 0 || (PTE_USER(va)&PTE_P) == 0){
-		panic("No page table at %x\n",va);
+		panic("No page table at %x, eip %x\n",va,utf->utf_eip);
 	}
 
 	pte_t pte=PTE_USER(va);
@@ -126,6 +120,15 @@ duppage(envid_t envid, unsigned pn)
 
 		pde_t pde=PDE_USER(va);
 		pte_t pte=PTE_USER(va);
+
+		if(pte & PTE_SHARE){
+			//Just copy pte
+			if((r=sys_page_map(thisenv->env_id,(void*)va,
+			envid,(void*)va,pte&0xFFF&PTE_SYSCALL)) < 0){
+				return r;
+			}
+			continue;
+		}
 
 		write=(pte & PTE_W) | (pde & PTE_W);
 		cow=(pte & PTE_COW) | (pde & PTE_COW);

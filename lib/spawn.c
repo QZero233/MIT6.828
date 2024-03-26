@@ -302,6 +302,24 @@ static int
 copy_shared_pages(envid_t child)
 {
 	// LAB 5: Your code here.
+	int r;
+
+	for(uint32_t i=0;i<NPTENTRIES*NPDENTRIES;i++){
+		uintptr_t va=i*PGSIZE;
+		if(!(PDE_USER(va) & PTE_P) || !(PTE_USER(va) & PTE_P)){
+			continue;
+		}
+
+		pte_t pte=PTE_USER(va);
+		if(pte & PTE_SHARE){
+			//Map shared pages
+			if((r=sys_page_map(thisenv->env_id,(void*)va,
+			child,(void*)va,pte&0xFFF&PTE_SYSCALL)) < 0){
+				// panic("Failed to map shared page at %x: %e\n",va,r);
+				return r;
+			}
+		}
+	}
 	return 0;
 }
 

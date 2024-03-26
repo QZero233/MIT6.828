@@ -48,6 +48,19 @@ bc_pgfault(struct UTrapframe *utf)
 	// the disk.
 	//
 	// LAB 5: you code here:
+	uintptr_t start_va=ROUNDDOWN((uintptr_t)addr,BLKSIZE);
+	uint32_t sect_start=(start_va-DISKMAP) / SECTSIZE;
+
+	//Allocate page
+	if((r=sys_page_alloc(thisenv->env_id,(void*)start_va,PTE_U | PTE_P | PTE_W)) < 0){
+		panic("Failed to alloc page when disk page fault at %x : %e\n",addr,r);
+	}
+
+	//Read disk
+	if((r=ide_read(sect_start,(void*)start_va,BLKSIZE/SECTSIZE))<0){
+		panic("Failed to read disk for va %x : %e\n",addr,r);
+	}
+	
 
 	// Clear the dirty bit for the disk block page since we just read the
 	// block from disk
@@ -77,7 +90,29 @@ flush_block(void *addr)
 		panic("flush_block of bad va %08x", addr);
 
 	// LAB 5: Your code here.
-	panic("flush_block not implemented");
+	
+	//Get page table entry first
+	uintptr_t va=ROUNDDOWN((uintptr_t)addr,PGSIZE);
+	if(!(PDE_USER(va) & PTE_P) || !(PTE_USER(va) & PTE_P)){
+		//Page does not exist, just return
+		return;
+	}
+
+	pte_t* pte=&PTE_USER(va);
+	if(!(*pte & PTE_D)){
+		//Not dirty, just return
+		return;
+	}
+
+	//Write back to disk
+	uint32_t start_sect=(va-DISKMAP)/SECTSIZE;
+	int r;
+	if((r=ide_write(start_sect,(void*)va,PGSIZE/SECTSIZE)) < 0){
+		panic("Failed to write back to disk for va %x\n",addr);
+	}
+
+	//Reset dirty bit
+	sys_page_map(thisenv->env_id,(void*)va,thisenv->env_id,(void*)va,PTE_SYSCALL);
 }
 
 // Test that the block cache works, by smashing the superblock and
